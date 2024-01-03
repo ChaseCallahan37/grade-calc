@@ -1,0 +1,5 @@
+# ignore the folder that contains raw CSVs
+/load-files/
+
+# ignore the folder that contains analyzed CSVs
+/analyzed-files/
