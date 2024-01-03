@@ -3,3 +3,6 @@
 
 # ignore the folder that contains analyzed CSVs
 /analyzed-files/
+
+# ignore the file that states how grades are to be calculated by category and weights
+grading-config.*

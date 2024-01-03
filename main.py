@@ -4,6 +4,8 @@ import re
 from typing import Dict
 import json
 
+from grading_config import GradingConfig
+
 LOAD_FILE_DIR = os.path.join(os.getcwd(),"load-files")
 GRADING_CONFIGURATION_FILE = os.path.join(os.getcwd(), "grading-config.json")
 
@@ -17,7 +19,7 @@ def main():
 
     while user_choice != -1:
         if(user_choice == 1):
-            print("1")
+            load_configuration_driver()
         elif(user_choice == 2):
             load_files_driver()
         elif(user_choice == 3):
@@ -27,13 +29,133 @@ def main():
         user_choice = main_menu()
 
 def get_grading_configuration(path):
-    pass
     
+    try:
+        with open(path, "r") as file:
+            return json.load(file)
+    except:
+        return {} 
+        
+        
+def load_configuration_driver():
+    grading_configuration = GradingConfig.from_file(GRADING_CONFIGURATION_FILE)
+
+    configuration_menu_options = ["Add Category", "Edit Category", "Remove Category"]
+    config_menu = generate_menu(configuration_menu_options)
+
+    grading_configuration.display() 
+    menu_choice = config_menu()
+
+    while(menu_choice != -1):
+        if(menu_choice ==1):
+            add_config_category(grading_configuration)
+        elif(menu_choice == 2):
+            edit_configuration(grading_configuration)
+        elif(menu_choice == 3):
+            remove_config_category(grading_configuration)
+
+        GradingConfig.to_file(GRADING_CONFIGURATION_FILE, grading_configuration)
+        grading_configuration.display()
+        menu_choice = config_menu()
+
+
+def add_config_category(grading_configuration: GradingConfig):
+    name = input("Enter the name of the category: ")
+    weight = get_cat_weight()
+    grading_configuration.add_category(name)
+    grading_configuration.add_weight(name, weight)
+    add_tags(grading_configuration, name) 
+
+def add_tags(config: GradingConfig, name: str):
+    tag = input("Enter tag names for this category (enter `stop` to stop): ").lower()
+    while tag != "stop":
+        config.add_tag(name, tag)
+        tag = input("Enter tag names for this category (enter `stop` to stop): ").lower()
+
+
+def edit_configuration(config: GradingConfig):
+    edit_config_menu = generate_menu(config.get_categories().copy())
+    print("Which catgory would you like to edit?") 
+    edit_choice = edit_config_menu()
+    cat_name = config.get_categories()[edit_choice - 1]
+
+    cat_keys = ["weight", "tags"]
+    sub_cat_menu = generate_menu(cat_keys)
+
+    print("Which field would you like to edit?")
+    sub_cat_choice = sub_cat_menu()
+
+    while(sub_cat_choice != -1):
+        if(sub_cat_choice == 1):
+            config.edit_weight(cat_name, get_cat_weight())
+        elif(sub_cat_choice == 2):
+            edit_config_tags(config, cat_name) 
+        print("Which field would you like to edit?")
+        sub_cat_choice = sub_cat_menu()
+
+def edit_config_tags(config: GradingConfig, name: str):
+    tag_choices = ["add", "edit", "remove"]
+    tag_menu = generate_menu(tag_choices)
+
+    tag_menu_choice = tag_menu()
+
+    while tag_menu_choice != -1:
+        if(tag_menu_choice == 1):
+            add_tags(config, name)
+        elif(tag_menu_choice == 2):
+            cat_tags = config.get_tags(name)
+            cat_select_menu = generate_menu(cat_tags)
+            cat_select_choice = cat_select_menu()
+            config.edit_tag(name, cat_select_choice - 1, input("Enter new tag name: "))
+        elif(tag_menu_choice == 3):
+            cat_tags = config.get_tags(name)
+            cat_select_menu = generate_menu(cat_tags)
+            cat_select_choice = cat_select_menu()
+            config.remove_tag(name, cat_select_choice - 1)
+
+        tag_menu_choice = tag_menu()
+
+   
+
+
+        
+
+def remove_config_category(config: Dict):
+    delete_config_menu = generate_menu(config.keys())
+    print("Which category would you like to remove?")
+    delete_choice = delete_config_menu()
+    del config[config.keys()[delete_choice - 1]]
+
+def get_cat_weight():
+    weight_input = input("Please enter a category weight between 0.00 and 1.00: ")
+    try:
+        weight = float(weight_input)
+        if not (0 < weight <= 1):
+            raise ValueError
+        return weight
+    except ValueError:
+        print("Invalid input!")
+        pause()
+        return get_cat_weight()
+        
 
 def load_files_driver():
     clear_screen()
     files = get_load_files(LOAD_FILE_DIR)
+
     grading_cats = get_grading_configuration(GRADING_CONFIGURATION_FILE)
+
+    if(len(grading_cats.keys()) == 0):
+        print("Uh oh...")
+        print("It looks like you have not configured how you would like to calculate grades")
+        if(input("Would you like to do that now? (y/n): ").lower() == "y"):
+            load_configuration_driver()
+
+        #break the flow of this driver regardless of choice
+        return
+
+    print(grading_cats)
+
     select_file_menu = generate_menu(files.copy())
 
 
