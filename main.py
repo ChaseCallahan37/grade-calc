@@ -8,6 +8,7 @@ from grading_config import GradingConfig
 
 LOAD_FILE_DIR = os.path.join(os.getcwd(),"load-files")
 GRADING_CONFIGURATION_FILE = os.path.join(os.getcwd(), "grading-config.json")
+ANALYZED_FILE = os.path.join(os.getcwd(), "analyzed-files", "analyzed-grades.csv")
 
 def main():
     clear_screen()
@@ -120,11 +121,12 @@ def edit_config_tags(config: GradingConfig, name: str):
 
         
 
-def remove_config_category(config: Dict):
-    delete_config_menu = generate_menu(config.keys())
+def remove_config_category(config: GradingConfig):
+    categories = config.get_categories()
+    delete_config_menu = generate_menu(categories.copy())
     print("Which category would you like to remove?")
     delete_choice = delete_config_menu()
-    del config[config.keys()[delete_choice - 1]]
+    config.remove_category(categories[delete_choice - 1])
 
 def get_cat_weight():
     weight_input = input("Please enter a category weight between 0.00 and 1.00: ")
@@ -143,52 +145,48 @@ def load_files_driver():
     clear_screen()
     files = get_load_files(LOAD_FILE_DIR)
 
-    grading_cats = get_grading_configuration(GRADING_CONFIGURATION_FILE)
-
-    if(len(grading_cats.keys()) == 0):
-        print("Uh oh...")
-        print("It looks like you have not configured how you would like to calculate grades")
-        if(input("Would you like to do that now? (y/n): ").lower() == "y"):
-            load_configuration_driver()
-
-        #break the flow of this driver regardless of choice
-        return
-
-    print(grading_cats)
+    grading_config = GradingConfig.from_file(GRADING_CONFIGURATION_FILE) 
 
     select_file_menu = generate_menu(files.copy())
 
-
     file_choice = select_file_menu()
 
-    if(file_choice == -1):
-        return print("\nReturning to main menu")
     chosen_file = files[file_choice - 1] 
     raw_grade_df = pd.read_csv(chosen_file)    
-    calc_students_average(raw_grade_df, {"lab": [.4], "pa": [.6]})
+    overall_grade_df = calc_overall_grade(raw_grade_df, grading_config)
     
+    overall_grade_df.to_csv(ANALYZED_FILE)
     
-def calc_students_average(df: pd.DataFrame, categories: Dict):
+def calc_overall_grade(df: pd.DataFrame, grading_config: GradingConfig):
     
-    student_average_df = df[["Last Name", "First Name"]].copy()
-    for key, [weight] in categories.items():
-        student_average_df[key] = df.apply(lambda x: calc_cat_average(x, key) * weight, axis=1)
+    student_average_df = df.copy()
+    categories = grading_config.get_categories()
+    for cat in categories:
+        cat_cols = filter_columns(grading_config.get_tags(cat), df.columns.to_list())
+        student_average_df[cat] = df.apply(lambda x: calc_cat_average(x, cat_cols) * grading_config.get_weight(cat), axis=1)
 
-    student_average_df["total_grad"] = student_average_df[categories.keys()].apply(lambda x: x.sum(), axis=1)
-
+    student_average_df["total_grad"] = student_average_df[categories].apply(lambda x: x.sum(), axis=1)
     print(student_average_df)
-     
-def calc_cat_average(row: pd.Series, cat):
-    cat_cols = list(filter(lambda col: re.findall(f'\\b{cat}\\b', col, re.IGNORECASE), row.index.tolist()))
-    
+
+    return student_average_df 
+
+def filter_columns(key_words: [str], cols: [str]):
+    # Will match any column that contains one of the keywords provided.
+    # Will also match if numbers follow keyword, ex: `pa4``
+    pattern = '|'.join([f'\\b{re.escape(keyword)}\\d*\\b' for keyword in key_words])
+
+    return list(filter(lambda col: re.findall(pattern, col, re.IGNORECASE), cols))
+ 
+
+def calc_cat_average(row: pd.Series, cat_cols):
     curr_cat_row = row[cat_cols]
-    assignment_totals = get_assignment_totals(cat_cols)
+    assignment_totals = calculate_cat_col_totals(cat_cols)
     cat_total = dict_reduce(lambda curr, accum: curr + accum, assignment_totals, 0) 
 
-    return curr_cat_row.sum() /cat_total
+    return curr_cat_row.sum() / cat_total
 
 
-def get_assignment_totals(lst: [str]):
+def calculate_cat_col_totals(lst: [str]):
     assignments = {}
     for col in lst:
         total_string = re.sub(r'.*\[(.*?)\].*', r'\1', col)
@@ -202,7 +200,8 @@ def get_load_files(path: str) -> [str]:
 
     return list(map(lambda x: os.path.join(path, x), os.listdir(path)))
 
-def generate_menu(opts: [str]):
+def generate_menu(opts_param: [str]):
+    opts = opts_param.copy()
     
     def format_opts(options):
         def format_opts_calc(options, result):

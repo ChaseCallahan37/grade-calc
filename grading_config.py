@@ -10,6 +10,9 @@ class GradingConfig:
     def get_categories(self):
         return list(self.config.keys())
 
+    def remove_category(self, name):
+        del self.config[name]
+
     def add_weight(self, name: str, weight: int):
         self.config[name]["weight"] = weight
 
