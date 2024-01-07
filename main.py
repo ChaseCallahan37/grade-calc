@@ -13,7 +13,7 @@ ANALYZED_FILE = os.path.join(os.getcwd(), "analyzed-files", "analyzed-grades.csv
 def main():
     clear_screen()
 
-    main_menu_opts = ["Edit Configuration", "Load File", "Analyze File"] 
+    main_menu_opts = ["Edit Configuration", "Load File"] 
     main_menu = generate_menu(main_menu_opts)
 
     user_choice = main_menu()
@@ -23,20 +23,10 @@ def main():
             load_configuration_driver()
         elif(user_choice == 2):
             load_files_driver()
-        elif(user_choice == 3):
-            print("3")
         
         pause()
         user_choice = main_menu()
 
-def get_grading_configuration(path):
-    
-    try:
-        with open(path, "r") as file:
-            return json.load(file)
-    except:
-        return {} 
-        
         
 def load_configuration_driver():
     grading_configuration = GradingConfig.from_file(GRADING_CONFIGURATION_FILE)
@@ -151,18 +141,63 @@ def load_files_driver():
 
     file_choice = select_file_menu()
 
-    chosen_file = files[file_choice - 1] 
-    raw_grade_df = pd.read_csv(chosen_file)    
-    overall_grade_df = calc_overall_grade(raw_grade_df, grading_config)
+    chosen_file = files[file_choice - 1]
+    try:
+        raw_grade_df = read_load_file(chosen_file, grading_config)
+        overall_grade_df = calc_overall_grade(raw_grade_df, grading_config)
+        overall_grade_df.to_csv(ANALYZED_FILE)
+ 
+    except ValueError as e:
+        print(e)
+        
+def read_load_file(path, grading_config: GradingConfig):
+    grade_df = pd.read_csv(path)
+
+    matched_columns = get_matched_columns(grade_df.columns, grading_config)
+    cols_mut_exclusive(matched_columns)
+    all_cols_match(matched_columns, grade_df.columns)
+
+    return grade_df
     
-    overall_grade_df.to_csv(ANALYZED_FILE)
+def cols_mut_exclusive(matched_cols: [str]):
+    duplicate_cats = []
+    for index, cat in enumerate(matched_cols[:len(matched_cols) - 1]):
+        if cat in matched_cols[index + 1:]:
+            duplicate_cats.append(cat)
+
+    if len(duplicate_cats) == 0:
+        return True
     
+    raise format_list_error(duplicate_cats, "The columns above match more than one category, please check your tags and column names")
+
+def all_cols_match(matched_cols: [str], cols):
+    unmatched_cols = []
+    for col in cols:
+        if col not in matched_cols:
+            unmatched_cols.append(col)
+
+    if len(unmatched_cols) == 0:
+        return True
+    
+    err = format_list_error(unmatched_cols, "The columns above match more than one category, please check your tags and column names")
+    print(err)
+
+    if input(f"Is it okay that the columns above did not match? (y/n): ").lower() == "y":
+        print("LOOK HER")
+        return True
+
+    raise err
+
+    
+def format_list_error(lst: [str], msg: str):
+    return ValueError("\n".join(lst + ["\n" + msg + "\n"]))
+
 def calc_overall_grade(df: pd.DataFrame, grading_config: GradingConfig):
     
     student_average_df = df.copy()
     categories = grading_config.get_categories()
     for cat in categories:
-        cat_cols = filter_columns(grading_config.get_tags(cat), df.columns.to_list())
+        cat_cols = match_columns(grading_config.get_tags(cat), df.columns.to_list())
         student_average_df[cat] = df.apply(lambda x: calc_cat_average(x, cat_cols) * grading_config.get_weight(cat), axis=1)
 
     student_average_df["total_grad"] = student_average_df[categories].apply(lambda x: x.sum(), axis=1)
@@ -170,7 +205,16 @@ def calc_overall_grade(df: pd.DataFrame, grading_config: GradingConfig):
 
     return student_average_df 
 
-def filter_columns(key_words: [str], cols: [str]):
+def get_matched_columns(cols: [str], config: GradingConfig):
+    matched_categories = []
+    for cat in config.get_categories():
+        matched_categories = matched_categories + match_columns(config.get_tags(cat), cols)
+    
+    return matched_categories
+
+
+
+def match_columns(key_words: [str], cols: [str]):
     # Will match any column that contains one of the keywords provided.
     # Will also match if numbers follow keyword, ex: `pa4``
     pattern = '|'.join([f'\\b{re.escape(keyword)}\\d*\\b' for keyword in key_words])
@@ -274,4 +318,11 @@ def dict_reduce(func, dict, initial):
 
    return accum
 
+def unique(lst: [any]):
+
+    for x, index in enumerate(lst):
+        if x in lst[index:]:
+            return False
+
+    return True 
 main()
